@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Courier</title>
+<style>
+  :root {
+    --paper: #f4f2ed;
+    --ink: #141414;
+    --mute: #8b877e;
+    --line: #dcd8cf;
+    --panel: #fbfaf7;
+    --tear: #e0462a;
+    --flip: #2a62de;
+    --both: #9b34d4;
+    --tser: #0c9b7c;
+    --sym: #d68a00;
+    --cut: #d6337a;
+    --skel: #00a2c2;
+    --ghost: rgba(20, 20, 20, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); }
+  body { font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 100vh; }
+  .stage { padding: 28px 36px 60px; min-width: 0; }
+  .panel {
+    background: var(--panel); border-left: 1px solid var(--line);
+    position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 18px 18px 40px;
+  }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .panel { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); }
+    .stage { padding: 20px 16px 40px; }
+  }
+
+  h1 { font: 600 14px/1.2 inherit; margin: 0 0 14px; letter-spacing: 0.01em; }
+  .row { margin: 0 0 26px; }
+  .row-label { font: 11px/1 ui-monospace, Menlo, monospace; color: var(--mute); margin: 0 0 6px; }
+  .row svg { display: block; overflow: visible; }
+  .stats { font: 11px/1.6 ui-monospace, Menlo, monospace; color: var(--mute); margin-top: 8px; }
+  .stats b { color: var(--ink); font-weight: 600; }
+
+  .field { margin: 0 0 14px; }
+  .field textarea {
+    width: 100%; resize: vertical; min-height: 54px; padding: 8px 10px;
+    font: 14px/1.35 "Courier New", Courier, monospace; color: var(--ink);
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  button {
+    font: inherit; font-size: 12px; color: var(--ink); background: #fff;
+    border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer;
+  }
+  button:hover { border-color: var(--ink); }
+
+  details.cat { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 0 0 10px; }
+  details.cat > summary {
+    list-style: none; display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; cursor: pointer; user-select: none; font-weight: 600;
+  }
+  details.cat > summary::-webkit-details-marker { display: none; }
+  .caret { width: 0; height: 0; border-left: 5px solid var(--ink); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; }
+  details[open] > summary .caret { transform: rotate(90deg); }
+  .cat .name { flex: 1; }
+  .cat .body { padding: 2px 12px 12px; border-top: 1px solid var(--line); }
+  .cat.off .body { opacity: 0.4; }
+
+  .switch { position: relative; width: 30px; height: 17px; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; border-radius: 10px; background: var(--line); transition: background .15s; }
+  .switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + span { background: var(--ink); }
+  .switch input:checked + span::after { transform: translateX(13px); }
+
+  .group { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mute); margin: 14px 0 4px; }
+  .slider { display: grid; grid-template-columns: 1fr auto; align-items: center; row-gap: 2px; margin: 6px 0; }
+  .slider label { font-size: 12.5px; }
+  .slider output { font: 11.5px ui-monospace, Menlo, monospace; color: var(--mute); }
+  .slider input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--ink); }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; font-size: 12.5px; cursor: pointer; }
+  .check input { margin: 2px 0 0; accent-color: var(--ink); }
+  .note { font-size: 11.5px; color: var(--mute); margin: 4px 0 0; }
+  .reset { margin-top: 10px; }
+  .seedrow { display: flex; gap: 6px; align-items: center; }
+  .seedrow input { width: 100%; font: 12px ui-monospace, Menlo, monospace; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; color: var(--mute); margin: 8px 0 0; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+
+  /* specimen */
+  .b { fill: none; stroke: var(--ink); stroke-linecap: butt; stroke-linejoin: round; }
+  .k { fill: var(--ink); }
+  .hl .ht { fill: var(--tear); }
+  .hl .hf { fill: var(--flip); }
+  .hl .hb { fill: var(--both); }
+  .hl .hn { fill: var(--tser); }
+  .hl .hc { fill: var(--cut); }
+  .hl .k.hy { fill: var(--sym); }
+  .bs { stroke-linecap: round; }
+  .hl .b.hy { stroke: var(--sym); }
+  .sk { fill: none; stroke: var(--skel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .skd { fill: var(--skel); }
+  .ghost { fill: var(--ghost); font-family: "Courier New", Courier, monospace; }
+  .fallback { fill: var(--mute); font-family: "Courier New", Courier, monospace; }
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage">
+    <div id="rows"></div>
+    <div class="stats" id="stats"></div>
+  </main>
+
+  <aside class="panel">
+    <h1>Generative Courier</h1>
+    <div class="field">
+      <textarea id="text" spellcheck="false"></textarea>
+      <div class="chips">
+        <button data-text="The quick brown fox jumps over the lazy dog">Pangram</button>
+        <button data-text="abcdefghijklmnopqrstuvwxyz">a to z</button>
+        <button data-text="ABCDEFGHIJKLMNOPQRSTUVWXYZ">A to Z</button>
+      </div>
+    </div>
+    <div id="cats"></div>
+    <div class="legend" id="legend">
+      <span><i style="background:var(--tear)"></i>tear terminal</span>
+      <span><i style="background:var(--flip)"></i>serif changed direction</span>
+      <span><i style="background:var(--both)"></i>tear changed direction</span>
+      <span><i style="background:var(--tser)"></i>terminal became a serif</span>
+      <span><i style="background:var(--sym)"></i>tittle became a symbol</span>
+      <span><i style="background:var(--cut)"></i>serif or tear at a cut</span>
+    </div>
+  </aside>
+</div>
+
+<script src="glyphs.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  const GC = window.GENCOURIER;
+  const PANGRAM = 'The quick brown fox jumps over the lazy dog';
+
+  // Categories in the order they will run. Each one gets a dropdown.
+  const CATS = [
+    { id: 'base', name: 'Base', params: [
+      { id: 'size', label: 'Size', min: 30, max: 260, step: 1, value: 110, fmt: v => v + ' px' },
+      { id: 'weight', label: 'Weight', min: 20, max: 110, step: 1, value: 56, fmt: v => v + ' u' },
+      { id: 'serifLen', label: 'Serif length', min: 0.4, max: 1.6, step: 0.01, value: 1, fmt: v => '×' + v.toFixed(2) },
+      { id: 'rows', label: 'Variations shown', min: 1, max: 8, step: 1, value: 3, fmt: v => String(v) },
+      { id: 'highlight', type: 'check', label: 'Colour the changes', value: true },
+      { id: 'skeleton', type: 'check', label: 'Show skeleton', value: false },
+      { id: 'ghost', type: 'check', label: 'Show real Courier underneath', value: false },
+      { type: 'seed' },
+    ] },
+    { id: 'extenders', name: 'Ascenders / Descenders', toggle: true, params: [
+      { group: 'Length' },
+      { id: 'asc', label: 'Ascenders, up to', min: 0, max: 40, step: 1, value: 18, fmt: v => '±' + v + '% · ±' + Math.round(v * 2) + ' u' },
+      { id: 'desc', label: 'Descenders, up to', min: 0, max: 40, step: 1, value: 18, fmt: v => '±' + v + '% · ±' + Math.round(v * 2) + ' u' },
+      { note: 'Each extender of b d f h k l t and g j p q y is stretched or shortened by a random amount in the range, measured against its 200 u above the x-height or below the baseline.' },
+    ] },
+    { id: 'kerning', name: 'Kerning', toggle: true, params: [
+      { group: 'Letter pairs' },
+      { id: 'amount', label: 'Spacing, up to', min: 0, max: 30, step: 0.5, value: 14, fmt: v => '±' + v + '% · ±' + Math.round(v * 6) + ' u' },
+      { note: 'Each gap between two letters in a word opens or closes by a random amount in the range, measured against the 600 u cell. The changes add up along a line. Spaces between words are left alone.' },
+    ] },
+    { id: 'leading', name: 'Line spacing', toggle: true, params: [
+      { group: 'Each line' },
+      { id: 'amount', label: 'Distance from the line above, up to', min: 0, max: 30, step: 0.5, value: 8, fmt: v => '±' + v + '% · ±' + Math.round(v * 11) + ' u' },
+      { note: 'Each line sits a little nearer to or further from the one above it, by a random amount in the range, measured against the 1100 u line height. Like a typewriter platen that never advances quite the same twice.' },
+    ] },
+    { id: 'tilt', name: 'Tilt', toggle: true, params: [
+      { group: 'Each letter' },
+      { id: 'angle', label: 'Angle, up to', min: 0, max: 8, step: 0.1, value: 2.3, fmt: v => '±' + v.toFixed(1) + '° · tops of tall letters move up to ±' + Math.round(Math.sin(v * Math.PI / 180) * 440) + ' u' },
+      { note: 'Each letter turns by a random angle in the range, about the middle of its x-height, like a typewriter slug sitting a little off true.' },
+    ] },
+    { id: 'weights', name: 'Stroke weight', toggle: true, params: [
+      { group: 'Each line of a letter' },
+      { id: 'amount', label: 'Weight, up to', min: 0, max: 60, step: 1, value: 20, fmt: (v, S) => '±' + v + '% · ' + Math.round(S.base.weight * (1 - v / 100)) + ' to ' + Math.round(S.base.weight * (1 + v / 100)) + ' u' },
+      { id: 'meets', type: 'check', label: 'Also split where a stroke joins or crosses another (the shoulder of an h on its stem, the bar of a t)', value: true },
+      { note: 'A new line starts wherever lines meet at a corner, like the vertex of a v or w. Serifs and tears take the weight of the line they end.' },
+    ] },
+    { id: 'truncation', name: 'Truncation', toggle: true, params: [
+      { group: 'Cut a letter' },
+      { id: 'chance', label: 'Chance per letter', min: 0, max: 100, step: 1, value: 10, fmt: v => v + '%' },
+      { id: 'gap', label: 'Gap', min: 0.1, max: 2, step: 0.05, value: 0.4, fmt: (v, S) => '×' + v.toFixed(2) + ' weight · ' + Math.round(v * S.base.weight) + ' u clear' },
+      { id: 'tearShare', label: 'Tear or serif at the cut', min: 0, max: 100, step: 1, value: 50, fmt: v => v + '% tear · ' + (100 - v) + '% serif' },
+      { note: 'One stroke is cut, away from its ends, corners and joins. One side stops flat; the other starts with a serif or a tear, on the outside of a curve or on either side of a straight stroke. With Tilt and Stroke weight on, each side can lean and weigh differently, within their ranges. A side still joined to the rest of the letter keeps its angle.' },
+    ] },
+    { id: 'scatter', name: 'Scatter', toggle: true, params: [
+      { group: 'Strokes come loose' },
+      { id: 'chance', label: 'Chance per stroke', min: 0, max: 100, step: 1, value: 0, fmt: v => v + '%' },
+      { id: 'offset', label: 'Drift, up to', min: 0, max: 600, step: 5, value: 200, fmt: v => '±' + v + ' u' },
+      { id: 'angle', label: 'Turn, up to', min: 0, max: 120, step: 1, value: 30, fmt: v => '±' + v + '°' },
+      { note: 'Each stroke, and each part of a cut stroke, may drift and turn on its own, so the letter comes apart into its components. Half Life uses this at the far end of its decay.' },
+    ] },
+    { id: 'serifs', name: 'Terminals / Serifs', toggle: true, params: [
+      { group: 'Serif to terminal' },
+      { id: 'convert', label: 'Chance', min: 0, max: 100, step: 1, value: 10, fmt: v => v + '%' },
+      { id: 'tearSize', label: 'Tear size', min: 0.55, max: 1.8, step: 0.01, value: 0.9, fmt: v => '×' + v.toFixed(2) + ' weight' },
+      { id: 'tearElong', label: 'Tear shape', min: 1, max: 2, step: 0.05, value: 1.4, fmt: v => v === 1 ? 'round' : '×' + v.toFixed(2) + ' long' },
+      { id: 'tearGlide', label: 'Tear glide', min: 0, max: 2, step: 0.05, value: 1, fmt: v => '×' + v.toFixed(2) + ' weight' },
+      { id: 'tearLean', label: 'Tear lean', min: 0, max: 1, step: 0.01, value: 0, fmt: v => Math.round(v * 100) + '%' },
+      { note: 'Tear length is fixed at ×0.90 weight.' },
+      { group: 'Terminal to serif' },
+      { id: 'toSerif', label: 'Chance, as a share of serif to terminal', min: 0, max: 95, step: 1, value: 50,
+        fmt: (v, S) => v + '% of it · ' + (v * S.serifs.convert / 100).toFixed(1) + '%' },
+      { note: 'Free stroke ends only (the tops of a, f, the tails of j, t, the ends of c, e, r…). Always rarer than serif to terminal.' },
+      { group: 'Rounded or sharp' },
+      { id: 'rounded', label: 'Chance of rounded', min: 0, max: 100, step: 1, value: 50, fmt: v => v + '% rounded · ' + (100 - v) + '% sharp' },
+      { id: 'roundness', label: 'Roundness', min: 0, max: 100, step: 1, value: 100, fmt: v => v + '%' },
+      { id: 'sharpness', label: 'Sharpness (taper)', min: 0, max: 100, step: 1, value: 25, fmt: v => v + '%' },
+      { group: 'Direction change' },
+      { id: 'flip', label: 'Chance', min: 0, max: 100, step: 1, value: 25, fmt: v => v + '%' },
+      { note: 'Two sided serifs keep their direction, and a serif or tear never turns toward a shoulder, bowl or bar it would run into.' },
+    ] },
+    { id: 'tittles', name: 'Tittles', toggle: true, params: [
+      { group: 'Replace with a symbol' },
+      { id: 'chance', label: 'Chance', min: 0, max: 100, step: 1, value: 20, fmt: v => v + '%' },
+      { id: 'maxRatio', label: 'Tallest shape allowed', min: 0.6, max: 4.5, step: 0.05, value: 1.35, fmt: v => v.toFixed(2) + ' : 1 height to width' },
+      { note: S => 'Drawing from, most common first: ' + GC.tittlePool(S.tittles.maxRatio).map(s => s.ch + ' ' + (s.share < 0.01 ? '<1' : Math.round(s.share * 100)) + '%').join(' · ') },
+      { group: 'Shift' },
+      { id: 'shiftX', label: 'Sideways, up to', min: 0, max: 8, step: 0.25, value: 3, fmt: (v, S) => v + ' pt · ' + Math.round(v * 4 / 3 * 1000 / S.base.size) + ' u at this size' },
+      { id: 'shiftY', label: 'Up or down, up to', min: 0, max: 4, step: 0.25, value: 1, fmt: (v, S) => v + ' pt · ' + Math.round(v * 4 / 3 * 1000 / S.base.size) + ' u at this size' },
+    ] },
+  ];
+
+  // ---------- state
+  const KEY = 'gencourier.v1';
+  const defaults = () => {
+    const P = { text: PANGRAM, seed: 1 };
+    for (const c of CATS) {
+      P[c.id] = { on: true };
+      for (const p of c.params) if (p.id) P[c.id][p.id] = p.value;
+    }
+    return P;
+  };
+  let S = defaults();
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved) {
+      // settings saved before the tear redesign keep everything but the tear shape
+      if (!(saved.v >= 2) && saved.serifs) { delete saved.serifs.tearSize; delete saved.serifs.tearGlide; }
+      // splitting at joins became the default in v3
+      if (!(saved.v >= 3) && saved.weights) delete saved.weights.meets;
+      S.text = typeof saved.text === 'string' ? saved.text : S.text;
+      S.seed = Number.isFinite(saved.seed) ? saved.seed : S.seed;
+      for (const c of CATS) Object.assign(S[c.id], saved[c.id] || {});
+    }
+  } catch (e) { /* fresh state */ }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...S, v: 3 })); } catch (e) {} };
+
+  // ---------- panel
+  const el = (tag, props = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    n.append(...kids);
+    return n;
+  };
+  const inputs = {};
+  let refreshers = [];   // readouts that depend on other settings
+
+  function buildPanel() {
+    const root = document.getElementById('cats');
+    root.innerHTML = '';
+    refreshers = [];
+    for (const c of CATS) {
+      const det = el('details', { class: 'cat' });
+      det.open = true;
+      const sum = el('summary', {}, el('span', { class: 'caret' }), el('span', { class: 'name', text: c.name }));
+      if (c.toggle) {
+        const box = el('input', { type: 'checkbox', title: 'Turn this category on or off' });
+        box.checked = S[c.id].on;
+        box.addEventListener('click', e => e.stopPropagation());
+        box.addEventListener('change', () => { S[c.id].on = box.checked; det.classList.toggle('off', !box.checked); update(); });
+        det.classList.toggle('off', !S[c.id].on);
+        const sw = el('label', { class: 'switch' }, box, el('span'));
+        sw.addEventListener('click', e => e.stopPropagation());
+        sum.append(sw);
+      }
+      const body = el('div', { class: 'body' });
+      for (const p of c.params) {
+        if (p.group) { body.append(el('div', { class: 'group', text: p.group })); continue; }
+        if (p.note) {
+          const note = el('p', { class: 'note' });
+          const show = () => { note.textContent = typeof p.note === 'function' ? p.note(S) : p.note; };
+          show();
+          if (typeof p.note === 'function') refreshers.push(show);
+          body.append(note);
+          continue;
+        }
+        if (p.type === 'seed') {
+          const inp = el('input', { type: 'number', step: '1' });
+          inp.value = S.seed;
+          inp.addEventListener('input', () => { const v = parseInt(inp.value, 10); if (Number.isFinite(v)) { S.seed = v; update(); } });
+          const btn = el('button', { text: 'New seed', onclick: () => { S.seed = Math.floor(Math.random() * 99999); inp.value = S.seed; update(); } });
+          body.append(el('div', { class: 'group', text: 'Seed' }), el('div', { class: 'seedrow' }, inp, btn));
+          inputs.seed = inp;
+          continue;
+        }
+        if (p.type === 'check') {
+          const box = el('input', { type: 'checkbox' });
+          box.checked = !!S[c.id][p.id];
+          box.addEventListener('change', () => { S[c.id][p.id] = box.checked; update(); });
+          body.append(el('label', { class: 'check' }, box, el('span', { text: p.label })));
+          inputs[c.id + '.' + p.id] = box;
+          continue;
+        }
+        const id = 'in_' + c.id + '_' + p.id;
+        const out = el('output', { for: id });
+        const range = el('input', { type: 'range', id, min: p.min, max: p.max, step: p.step });
+        range.value = S[c.id][p.id];
+        const show = () => { out.textContent = p.fmt(+range.value, S); };
+        range.addEventListener('input', () => { S[c.id][p.id] = +range.value; update(); });
+        show();
+        refreshers.push(show);
+        body.append(el('div', { class: 'slider' }, el('label', { for: id, text: p.label }), out, range));
+        inputs[c.id + '.' + p.id] = { range, show };
+      }
+      body.append(el('button', { class: 'reset', text: 'Reset ' + c.name.toLowerCase(), onclick: () => {
+        const d = defaults()[c.id];
+        Object.assign(S[c.id], d);
+        buildPanel();
+        update();
+      } }));
+      det.append(sum, body);
+      root.append(det);
+    }
+  }
+
+  // ---------- specimen
+  const PADX = 140, TOP = 760, LH = 1100, BOTTOM = 300;
+
+  function wrap(text, cols) {
+    const lines = [[]];
+    const tokens = [];
+    const re = /\S+|\s+/g;
+    let m;
+    while ((m = re.exec(text))) tokens.push({ t: m[0], i: m.index });
+    for (const tok of tokens) {
+      let line = lines[lines.length - 1];
+      if (tok.t.includes('\n')) { lines.push([]); continue; }
+      if (/^\s+$/.test(tok.t)) {
+        if (line.length) for (let k = 0; k < tok.t.length && line.length < cols; k++) line.push({ ch: ' ', idx: tok.i + k });
+        continue;
+      }
+      if (line.length && line.length + tok.t.length > cols) {
+        while (line.length && line[line.length - 1].ch === ' ') line.pop();
+        lines.push([]); line = lines[lines.length - 1];
+      }
+      for (let k = 0; k < tok.t.length; k++) {
+        if (line.length >= cols) { lines.push([]); line = lines[lines.length - 1]; }
+        line.push({ ch: tok.t[k], idx: tok.i + k });
+      }
+    }
+    return lines.filter((l, i) => l.length || i === 0);
+  }
+
+  const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderRow(text, seed, cols, P, stats) {
+    const lines = wrap(text, cols);
+    // baselines: each line sits a little nearer to or further from the one above
+    const base = [TOP];
+    for (let li = 1; li < lines.length; li++) {
+      const lead = LH + GC.leadUnits(li, seed, P, LH);
+      base.push(base[li - 1] + lead);
+      stats.leads++;
+      stats.leadMin = Math.min(stats.leadMin, lead);
+      stats.leadMax = Math.max(stats.leadMax, lead);
+    }
+    const H = base[base.length - 1] + BOTTOM;
+    const scale = P.base.size / 1000;
+    let ghost = '', ink = '', skel = '', fallback = '';
+    let right = PADX + 600;
+    lines.forEach((line, li) => {
+      const by = base[li];
+      let drift = 0;   // kerning adds up along the line; word spaces are left alone
+      line.forEach((cell, ci) => {
+        if (ci > 0 && cell.ch !== ' ' && line[ci - 1].ch !== ' ') {
+          const k = GC.kernUnits(cell.idx, seed, P);
+          drift += k;
+          stats.pairs++;
+          stats.kernMax = Math.max(stats.kernMax, Math.abs(k));
+        }
+        const ox = PADX + ci * 600 + drift;
+        right = Math.max(right, ox + 600);
+        if (cell.ch === ' ') return;
+        if (P.base.ghost) ghost += `<text class="ghost" x="${ox}" y="${by}" font-size="1000">${esc(cell.ch)}</text>`;
+        const g = GC.buildGlyph(cell.ch, cell.idx, seed, P, stats);
+        if (!g) { fallback += `<text class="fallback" x="${ox}" y="${by}" font-size="1000">${esc(cell.ch)}</text>`; return; }
+        const tilt = GC.tiltDegrees(cell.idx, seed, P);
+        stats.tiltMax = Math.max(stats.tiltMax, Math.abs(tilt));
+        const tr = `translate(${ox} ${by}) scale(1 -1)` + (tilt ? ` rotate(${tilt.toFixed(3)} ${GC.TILT_PIVOT[0]} ${GC.TILT_PIVOT[1]})` : '');
+        let s = `<g transform="${tr}">`;
+        for (const b of g.bodies) s += `<path class="b ${b.cls || ''}" d="${b.d}"${b.w ? ` stroke-width="${b.w}"` : ''}/>`;
+        for (const [d, cls] of g.fills) s += `<path class="k ${cls}" d="${d}"/>`;
+        ink += s + '</g>';
+        if (P.base.skeleton) {
+          let k = `<g transform="${tr}">`;
+          for (const b of g.bodies) if (b.skel !== null) k += `<path class="sk" d="${b.skel || b.d}"/>`;
+          for (const [p, kind] of g.marks) k += kind === 'tittle'
+            ? `<circle class="sk" cx="${p[0]}" cy="${p[1]}" r="10"/>`
+            : `<circle class="skd" cx="${p[0]}" cy="${p[1]}" r="${kind === 'serif' ? 12 : 7}"/>`;
+          skel += k + '</g>';
+        }
+      });
+    });
+    const W = right + PADX;
+    return `<svg viewBox="0 0 ${W} ${H}" width="${(W * scale).toFixed(1)}" height="${(H * scale).toFixed(1)}" class="${P.base.highlight ? 'hl' : ''}">` +
+      ghost + `<g stroke-width="${P.base.weight}">${ink}</g>` + fallback + skel + '</svg>';
+  }
+
+  function update() {
+    save();
+    const rowsEl = document.getElementById('rows');
+    const avail = rowsEl.clientWidth || 800;
+    const cell = 0.6 * S.base.size;
+    const cols = Math.max(4, Math.floor((avail - 2 * PADX * S.base.size / 1000) / cell));
+    const text = S.text.length ? S.text : ' ';
+    const stats = { serifs: 0, tears: 0, terminals: 0, termToSerif: 0, canFlip: 0, flipped: 0, rounded: 0, sharp: 0, tittles: 0, symbols: 0, pairs: 0, kernMax: 0, tiltMax: 0, lines: 0, wMin: Infinity, wMax: 0, truncated: 0, cutTears: 0, cutSerifs: 0, sideTilts: 0, leads: 0, leadMin: Infinity, leadMax: 0 };
+    let html = '';
+    for (let r = 0; r < S.base.rows; r++) {
+      const seed = GC.mix32((GC.hashStr(text) ^ GC.mix32((S.seed + r * 7919) >>> 0)) >>> 0);
+      html += `<div class="row"><div class="row-label">seed ${S.seed + r * 7919}</div>${renderRow(text, seed, cols, S, stats)}</div>`;
+    }
+    rowsEl.innerHTML = html;
+    const pc = (a, b) => b ? Math.round(a / b * 100) + '%' : '·';
+    const kept = stats.rounded + stats.sharp;
+    document.getElementById('stats').innerHTML =
+      `across ${S.base.rows} variation${S.base.rows > 1 ? 's' : ''}: <b>${stats.serifs}</b> serifs · ` +
+      `<b>${stats.tears}</b> became tear terminals (${pc(stats.tears, stats.serifs)}) · ` +
+      `<b>${stats.termToSerif}</b> of ${stats.terminals} terminals became serifs (${pc(stats.termToSerif, stats.terminals)}) · ` +
+      `<b>${stats.flipped}</b> of the ${stats.canFlip} serifs and tears free to turn changed direction (${pc(stats.flipped, stats.canFlip)}) · ` +
+      `of the serifs, <b>${stats.rounded}</b> rounded (${pc(stats.rounded, kept)}) and <b>${stats.sharp}</b> sharp (${pc(stats.sharp, kept)}) · ` +
+      `<b>${stats.symbols}</b> of ${stats.tittles} tittles became symbols (${pc(stats.symbols, stats.tittles)}) · ` +
+      `<b>${stats.pairs}</b> letter pairs respaced, the largest by ${Math.round(stats.kernMax)} u · ` +
+      `letters tilted up to <b>${stats.tiltMax.toFixed(1)}°</b> · ` +
+      `<b>${stats.lines}</b> lines weighted from ${Math.round(stats.wMin)} to ${Math.round(stats.wMax)} u · ` +
+      `<b>${stats.truncated}</b> letters cut (${stats.cutSerifs} with a serif, ${stats.cutTears} with a tear; ${stats.sideTilts} sides leaning on their own) · ` +
+      (stats.leads ? `lines ${Math.round(stats.leadMin)} to ${Math.round(stats.leadMax)} u apart` : 'one line, so no line spacing to vary');
+    document.getElementById('legend').style.display = S.base.highlight ? '' : 'none';
+    for (const r of refreshers) r();
+  }
+
+  // ---------- wire up
+  const ta = document.getElementById('text');
+  ta.value = S.text;
+  ta.addEventListener('input', () => { S.text = ta.value; update(); });
+  document.querySelectorAll('[data-text]').forEach(b => b.addEventListener('click', () => { ta.value = S.text = b.dataset.text; update(); }));
+  buildPanel();
+  update();
+  let rt;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 80); });
+})();
+</script>
+</body>
+</html>
