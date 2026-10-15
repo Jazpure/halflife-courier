@@ -97,7 +97,7 @@
   // Bring one row's letters up to time t. Returns whether any changed, and
   // when the next change in the row is due.
   function updateRow(job, R) {
-    const P = HL.params(R.D);
+    const P = job.plain ? HL.plain() : HL.params(R.D);
     const key = job.col + ':' + R.row;
     const prev = rows.get(key);
     const fresh = job.force || !prev || prev.cfg !== job.cfg;

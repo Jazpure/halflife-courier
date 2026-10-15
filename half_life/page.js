@@ -4,6 +4,7 @@
 (function () {
   const HL = window.HALFLIFE;
   const PHRASE = 'All work and no play makes Jack a dull boy.';
+  const END = 'keep Shining.';
   const WORDS = PHRASE.split(' ');
   const NARROW = 24;           // characters across a narrow column
   const SINGLE = 26;           // characters across the single column on phones
@@ -86,9 +87,14 @@
       x += w + gutter;
       bottom = Math.max(bottom, y + rowH);
     }
-    sheet.style.height = Math.ceil(textTop + bottom + fontPx * 8) + 'px';
+    // The closing line: larger, untouched Courier, centred below the columns.
+    const endFont = Math.min(fontPx * 3, (vw - 2 * side) / (END.length * 0.6) * 0.92);
+    const endU = endFont / 1000;
+    const endW = END.length * 600 * endU;
+    const end = { x: (vw - endW) / 2, top: textTop + bottom + endFont * 2.2, u: endU, w: endW, h: LH * endU };
+    sheet.style.height = Math.ceil(end.top + end.h + endFont * 2.5) + 'px';
     const cfg = [vw, cols, fontPx.toFixed(3), dpr, seed].join('|');
-    L = { vw, vh, cols, fontPx, u, dpr, textTop, columns, cfg, rowH, blocks: Math.ceil(ROWS / BLOCK) };
+    L = { vw, vh, cols, fontPx, u, dpr, textTop, columns, cfg, rowH, blocks: Math.ceil(ROWS / BLOCK), end };
   }
 
   // Room around a block for letters that lean or wander out of it.
@@ -131,9 +137,14 @@
   }
 
   function place(el, key, res) {
-    const i = key.indexOf(':'), col = L.columns[+key.slice(0, i)], k = +key.slice(i + 1);
-    el.style.left = (col.x - res.padX) + 'px';
-    el.style.top = (L.textTop + blockTop(col, k) - res.padY) + 'px';
+    if (key === 'end') {
+      el.style.left = (L.end.x - res.padX) + 'px';
+      el.style.top = (L.end.top - res.padY) + 'px';
+    } else {
+      const i = key.indexOf(':'), col = L.columns[+key.slice(0, i)], k = +key.slice(i + 1);
+      el.style.left = (col.x - res.padX) + 'px';
+      el.style.top = (L.textTop + blockTop(col, k) - res.padY) + 'px';
+    }
     el.style.width = (el.width / res.scale) + 'px';
     el.style.height = (el.height / res.scale) + 'px';
   }
@@ -185,6 +196,16 @@
     };
   }
 
+  // the closing line, drawn once, with every rule off
+  function endJob(t) {
+    const E = L.end, pad = E.u * 400;
+    return {
+      key: 'end', cfg: L.cfg, seed: HL.hash(seed, 99), col: 99, t, plain: true, force: forceNext.delete('end'), ink,
+      rows: [{ row: 0, text: END, D: 0, y: 0, adv: 1 }],
+      u: E.u, dpr: L.dpr, w: E.w, h: E.h, padX: pad, padY: pad, base: BASE,
+    };
+  }
+
   // first block whose bottom is below y (column coordinates)
   function blockAt(col, y) {
     let lo = 0, hi = L.blocks - 1;
@@ -224,8 +245,15 @@
         want.push({ c, k, key, pri: pri + (visible ? 0 : 1e7) });
       }
     }
+    // the closing line, once it is near
+    const endY = L.end.top - L.textTop;
+    if (endY < view1 + L.vh * 0.6 && !pending.has('end')) {
+      const have = store.get('end');
+      if (!have || have.cfg !== L.cfg) want.push({ end: true, key: 'end', pri: 0 });
+    }
     // let go of blocks far from the screen
     for (const key of [...store.keys()]) {
+      if (key === 'end') { if (endY > view1 + L.vh * 1.2) drop(key); continue; }
       const i = key.indexOf(':'), col = L.columns[+key.slice(0, i)], k = +key.slice(i + 1);
       if (!col || blockBottom(col, k) < view0 - L.vh * 0.7 || blockTop(col, k) > view1 + L.vh * 1.2) drop(key);
     }
@@ -234,9 +262,9 @@
     if (workers.length) {
       const batches = workers.map(() => []);
       for (const w of want) {
-        const wi = (w.c * 7919 + w.k) % workers.length;
+        const wi = w.end ? 0 : (w.c * 7919 + w.k) % workers.length;
         if (inflight[wi] >= (load > 2 ? 1 : 2) || batches[wi].length >= 3) continue;
-        batches[wi].push(job(w.c, w.k, t));
+        batches[wi].push(w.end ? endJob(t) : job(w.c, w.k, t));
         pending.add(w.key);
       }
       batches.forEach((b, wi) => { if (b.length) { inflight[wi]++; workers[wi].postMessage({ jobs: b }); } });
@@ -246,7 +274,7 @@
         const stop = performance.now() + 8;
         for (const w of want) {
           if (performance.now() > stop) break;
-          const j = job(w.c, w.k, t);
+          const j = w.end ? endJob(t) : job(w.c, w.k, t);
           const r = local.block(j, (cw, ch) => Object.assign(document.createElement('canvas'), { width: cw, height: ch }));
           take(r.canvas ? { key: j.key, cfg: j.cfg, t: j.t, next: r.next, bmp: r.canvas, scale: j.dpr, padX: j.padX, padY: j.padY }
                         : { key: j.key, cfg: j.cfg, t: j.t, next: r.next, same: true });

@@ -58,6 +58,23 @@
     return P;
   }
 
+  // Untouched Courier, for the closing line: every rule off.
+  let plainP = null;
+  function plain() {
+    if (!plainP) {
+      const P = params(0);
+      plainP = {
+        ...P, D: 0, period: Infinity, bounce: 0, track: 1, lineStep: 1,
+        extenders: { ...P.extenders, on: false }, kerning: { ...P.kerning, on: false },
+        tilt: { ...P.tilt, on: false }, weights: { ...P.weights, on: false },
+        truncation: { ...P.truncation, on: false }, scatter: { ...P.scatter, on: false },
+        serifs: { ...P.serifs, on: false }, tittles: { ...P.tittles, on: false },
+        strike: { ...P.strike, chance: 0 }, faint: { chance: 0 },
+      };
+    }
+    return plainP;
+  }
+
   // small integer hash to a number in [0, 1)
   function mix32(h) {
     h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
@@ -79,5 +96,5 @@
     return { epoch, next: (epoch + 1) * p - phase };
   }
 
-  root.HALFLIFE = { decayAt, params, hash, unit, mix32, epochAt };
+  root.HALFLIFE = { decayAt, params, plain, hash, unit, mix32, epochAt };
 })(typeof self !== 'undefined' ? self : window);
